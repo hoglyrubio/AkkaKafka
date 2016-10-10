@@ -1,12 +1,11 @@
 package com.hogly.kafka;
 
-import akka.actor.AbstractLoggingActor;
-import akka.actor.ActorRef;
-import akka.actor.ActorSystem;
-import akka.actor.Props;
-import akka.dispatch.Futures;
+import akka.actor.*;
 import akka.japi.pf.ReceiveBuilder;
 import akka.pattern.Patterns;
+import com.hogly.kafka.external.KafkaAdmin;
+import com.hogly.kafka.messages.CreateTopic;
+import com.hogly.kafka.messages.TestMessage;
 import com.typesafe.config.Config;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -23,8 +22,8 @@ public class ActorProducer extends AbstractLoggingActor {
     ActorSystem system = ActorSystem.create("actor-producer");
     ActorRef actorProducer = system.actorOf(ActorProducer.props(), "actorProducer");
 
-    Patterns.ask(actorProducer, CreateTopic.of(TOPIC, 10, 1), TIMEOUT);
-    //actorProducer.tell(50, ActorRef.noSender());
+    //Patterns.ask(actorProducer, CreateTopic.of(TOPIC, 10, 1), TIMEOUT);
+    Patterns.ask(actorProducer, TestMessage.of(5000, "Hola"), TIMEOUT);
   }
 
   public final static int TIMEOUT = 10000;
@@ -47,9 +46,8 @@ public class ActorProducer extends AbstractLoggingActor {
   @Override
   public PartialFunction<Object, BoxedUnit> receive() {
     return ReceiveBuilder
-      .match(String.class, this::sendUnique)
-      .match(Integer.class, this::sendMultiple)
-      .match(CreateTopic.class, this::createTopic)
+      .match(TestMessage.class, this::handleTestMessage)
+      .match(CreateTopic.class, this::handleCreateTopic)
       .build();
   }
 
@@ -57,27 +55,28 @@ public class ActorProducer extends AbstractLoggingActor {
     return context().system().settings().config();
   }
 
-  private void createTopic(CreateTopic command) throws IOException {
+  private void handleCreateTopic(CreateTopic command) throws IOException {
     KafkaAdmin kafkaAdmin = KafkaAdmin.create(config());
     if (!kafkaAdmin.topicExists(command.topicName())) {
       kafkaAdmin.createTopic(command.topicName(), command.partions(), command.replicas());
+      sender().tell(new Status.Success("created"), self());
+    } else {
+      sender().tell(new Status.Success("already exists"), self());
     }
-    int partitions = kafkaAdmin.partitions(command.topicName());
-    log().info("Topic: {} partitions: {} replicas: {}", command.topicName(), partitions, command.replicas());
+
+    /*
+    List<PartitionMetadata> partitions = kafkaAdmin.partitions(command.topicName());
+    log().info("Topic: {} partitions: {} replicas: {}", command.topicName(), partitions.size(), command.replicas());
     kafkaAdmin.close();
 
     TopicUtils topicUtils = TopicUtils.create(config().getString("kafka.bootstrap-servers"));
-    topicUtils.lastOffsetByPartition(TOPIC, partitions);
+    topicUtils.lastOffsetByPartition(TOPIC, 1);*/
   }
 
-  private void sendMultiple(Integer qty) {
-    for (int i=0; i<qty; i++) {
-      publish(TOPIC, String.valueOf(i), "Message #" + i);
+  private void handleTestMessage(TestMessage msg) {
+    for (int i=0; i < msg.quantity(); i++) {
+      publish(TOPIC, String.valueOf(i), msg.payload() + "#" + i);
     }
-  }
-
-  private void sendUnique(String message) {
-    publish(TOPIC, message, message);
   }
 
   private void publish(String topic, String key, String value) {
@@ -89,10 +88,10 @@ public class ActorProducer extends AbstractLoggingActor {
     return ((recordMetadata, e) -> {
       if (e != null) {
         log().error(e, "Error publishing on Kafka");
-        Patterns.pipe(Futures.failed(e), context().dispatcher()).to(_sender);
+        _sender.tell(new Status.Failure(e), self());
       } else {
-        log().info("Sent. T: {} P: {} O: {} ", recordMetadata.topic(), recordMetadata.partition(), recordMetadata.offset());
-        Patterns.pipe(Futures.successful(recordMetadata), context().dispatcher()).to(_sender);
+        log().info("Sent. Topic: {} Partition: {} Offset: {} ", recordMetadata.topic(), recordMetadata.partition(), recordMetadata.offset());
+        sender().tell(new Status.Success(recordMetadata), self());
       }
     });
   }

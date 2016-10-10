@@ -1,16 +1,18 @@
-package com.hogly.kafka;
+package com.hogly.kafka.external;
 
 import com.typesafe.config.Config;
 import kafka.admin.AdminUtils;
+import kafka.api.PartitionMetadata;
 import kafka.api.TopicMetadata;
 import kafka.utils.ZKStringSerializer$;
 import kafka.utils.ZkUtils;
 import org.I0Itec.zkclient.ZkClient;
 import org.I0Itec.zkclient.ZkConnection;
+import scala.collection.JavaConversions;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.Map;
+import java.util.List;
 import java.util.Properties;
 
 public class KafkaAdmin implements Closeable {
@@ -41,9 +43,9 @@ public class KafkaAdmin implements Closeable {
     AdminUtils.createTopic(zkUtils, topicName, noOfPartitions, noOfReplicas, topicConfiguration);
   }
 
-  public int partitions(String topicName) {
+  public List<PartitionMetadata> partitions(String topicName) {
     TopicMetadata metadata = AdminUtils.fetchTopicMetadataFromZk(topicName, zkUtils);
-    return metadata.partitionsMetadata().size();
+    return JavaConversions.seqAsJavaList(metadata.partitionsMetadata());
   }
 
   @Override public void close() throws IOException {

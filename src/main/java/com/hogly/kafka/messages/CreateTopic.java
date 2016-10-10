@@ -1,4 +1,4 @@
-package com.hogly.kafka;
+package com.hogly.kafka.messages;
 
 public class CreateTopic {
 

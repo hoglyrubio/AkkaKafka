@@ -1,4 +1,4 @@
-package com.hogly.kafka;
+package com.hogly.kafka.external;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -37,7 +37,7 @@ public class TopicUtils {
     LOG.debug("Obtaining last offset for topic: {} and partition: {}", topic, partition);
     String groupId = UUID.randomUUID().toString();
     Properties props = basicProperties(groupId, "topic-utils");
-    props.setProperty("auto.offset.reset", "lastest");
+    props.setProperty("auto.offset.reset", "earliest");
     KafkaConsumer<String, String> consumer = kafkaConsumerByPartition(topic, props, partition);
     ConsumerRecords<String, String> records = consumer.poll(100);
     if (records.isEmpty()) {
@@ -50,7 +50,9 @@ public class TopicUtils {
   public KafkaConsumer<String,String> kafkaConsumerByPartition(String topic, Properties props, int partition) {
     KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
     TopicPartition topicPartition = new TopicPartition(topic, partition);
+    consumer.subscribe(Arrays.asList(topic));
     consumer.assign(Arrays.asList(topicPartition));
+    consumer.seekToEnd(topicPartition);
     return consumer;
   }
 
